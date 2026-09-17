@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Turbo Park - V3 Physics & Audio</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0a0a12; touch-action: none; font-family: 'Helvetica Neue', sans-serif; user-select: none; }
+        canvas { display: block; }
+        
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle, rgba(10,10,20,0.85) 0%, rgba(0,0,0,0.95) 100%); z-index: 10; color: white; transition: opacity 0.3s; backdrop-filter: blur(5px); }
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+        
+        h1 { font-size: 44px; margin: 0; color: #fff; text-shadow: 0 0 15px rgba(0, 255, 204, 0.5); font-weight: 900; letter-spacing: 2px; }
+        .subtitle { color: #00ffcc; font-size: 14px; font-weight: bold; letter-spacing: 4px; margin-bottom: 40px; text-transform: uppercase; }
+        
+        .btn { background: linear-gradient(135deg, #00ffcc 0%, #00b3aa 100%); color: #000; border: none; padding: 16px 40px; font-size: 18px; font-weight: 900; border-radius: 8px; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 10px 20px rgba(0, 255, 204, 0.2); margin-top: 20px; }
+        .btn:active { transform: translateY(2px); box-shadow: 0 5px 10px rgba(0, 255, 204, 0.2); }
+
+        #hud { position: absolute; top: 20px; left: 20px; display: flex; gap: 15px; z-index: 5; pointer-events: none; }
+        .metric { background: rgba(255, 255, 255, 0.05); border-left: 3px solid #00ffcc; padding: 8px 15px; border-radius: 0 6px 6px 0; color: #fff; font-weight: bold; font-size: 18px; text-shadow: 0 2px 4px rgba(0,0,0,0.5); backdrop-filter: blur(4px); }
+        .metric span { color: #00ffcc; font-family: monospace; font-size: 22px; }
+        
+        #cam-btn { position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.1); border: 1px solid #00ffcc; color: #00ffcc; padding: 10px 15px; border-radius: 8px; font-weight: bold; z-index: 6; backdrop-filter: blur(4px); }
+        #cam-btn:active { background: rgba(0,255,204,0.3); }
+
+        #controls { position: absolute; bottom: 30px; left: 0; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; z-index: 5; }
+        .d-pad { display: flex; gap: 10px; }
+        .ctrl { width: 70px; height: 70px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: #aaa; font-size: 28px; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+        .ctrl:active { background: rgba(0,255,204,0.15); border-color: #00ffcc; color: #00ffcc; transform: scale(0.95); }
+
+        .board { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 30px; border-radius: 16px; width: 300px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 15px; color: #ccc; }
+        .val { font-weight: bold; color: #fff; font-family: monospace; font-size: 16px; }
+        .stars { font-size: 42px; text-align: center; margin-bottom: 20px; color: rgba(255,255,255,0.1); letter-spacing: 5px; }
+        .star-on { color: #ffcc00; text-shadow: 0 0 15px rgba(255, 204, 0, 0.5); }
+        .total { font-size: 24px; color: #00ffcc; font-weight: 900; text-align: center; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 20px; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="menu" class="overlay">
+        <h1>TURBO PARK</h1>
+        <div class="subtitle">V3: Physics & Audio Update</div>
+        <button class="btn" id="start-btn">Start Engine</button>
+    </div>
+
+    <div id="results" class="overlay hidden">
+        <h1 id="res-title" style="font-size: 32px; margin-bottom: 10px;">PARKED</h1>
+        <div class="stars" id="res-stars">★★★</div>
+        <div class="board">
+            <div class="row"><span>Time:</span> <span class="val" id="res-time">0.0s</span></div>
+            <div class="row"><span>Damage:</span> <span class="val" id="res-dmg">0%</span></div>
+            <div class="row"><span>Alignment:</span> <span class="val" id="res-align">0%</span></div>
+            <div class="total">SCORE: <span id="res-score">0</span></div>
+        </div>
+        <button class="btn" id="retry-btn">Retry Level</button>
+    </div>
+
+    <div id="hud" class="hidden">
+        <div class="metric">⏱ <span id="ui-time">45</span></div>
+        <div class="metric">💥 <span id="ui-dmg">0</span>%</div>
+    </div>
+    
+    <button id="cam-btn" class="hidden">🎥 CHASE</button>
+
+    <div id="controls" class="hidden">
+        <div class="d-pad">
+            <div class="ctrl" id="btn-l">◀</div>
+            <div class="ctrl" id="btn-r">▶</div>
+        </div>
+        <div class="d-pad">
+            <div class="ctrl" id="btn-b">🛑</div>
+            <div class="ctrl" id="btn-g">⏫</div>
+        </div>
+    </div>
+
+    <script>
+        // --- AUDIO ENGINE ---
+        let audioCtx, engineOsc, engineGain, skidOsc, skidGain;
+        let audioInit = false;
+
+        function initAudio() {
+            if (audioInit) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            engineOsc = audioCtx.createOscillator();
+            engineGain = audioCtx.createGain();
+            engineOsc.type = 'sawtooth';
+            engineOsc.frequency.value = 40;
+            engineOsc.connect(engineGain);
+            engineGain.connect(audioCtx.destination);
+            engineGain.gain.value = 0.05;
+            engineOsc.start();
+
+            skidOsc = audioCtx.createOscillator();
+            skidGain = audioCtx.createGain();
+            skidOsc.type = 'square';
+            skidOsc.frequency.value = 800;
+            skidOsc.connect(skidGain);
+            skidGain.connect(audioCtx.destination);
+            skidGain.gain.value = 0;
+            skidOsc.start();
+            
+            audioInit = true;
+        }
+
+        // --- THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a12);
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        const moon = new THREE.DirectionalLight(0xaaaaee, 1);
+        moon.position.set(-15, 20, -15);
+        moon.castShadow = true;
+        scene.add(moon);
+
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x111, roughness: 0.9 }));
+        ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+        scene.add(ground);
+
+        // --- VEHICLE MODEL ---
+        const car = new THREE.Group();
+        scene.add(car);
+        
+        // Decouple body for suspension pitch/roll
+        const bodyGroup = new THREE.Group(); 
+        car.add(bodyGroup);
+
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, metalness: 0.5, roughness: 0.4 });
+        const brakeMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0x000000 });
+        const revMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0x000000 });
+
+        const chassis = new THREE.Mesh(new THREE.BoxGeometry(2, 0.5, 4.4), bodyMat);
+        chassis.position.y = 0.4; chassis.castShadow = true;
+        bodyGroup.add(chassis);
+        const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.4, 2), new THREE.MeshStandardMaterial({ color: 0x000 }));
+        cabin.position.set(0, 0.85, -0.2);
+        bodyGroup.add(cabin);
+
+        const tL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), brakeMat);
+        tL.position.set(-0.7, 0.55, -2.21); bodyGroup.add(tL);
+        const tR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), brakeMat);
+        tR.position.set(0.7, 0.55, -2.21); bodyGroup.add(tR);
+
+        const rL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.1), revMat);
+        rL.position.set(-0.3, 0.55, -2.21); bodyGroup.add(rL);
+        const rR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.1), revMat);
+        rR.position.set(0.3, 0.55, -2.21); bodyGroup.add(rR);
+
+        // Headlights
+        const hl = new THREE.SpotLight(0xffffee, 1.5, 40, 0.6, 0.5, 1);
+        hl.position.set(0, 0.5, 2.2); hl.target.position.set(0, 0, 10);
+        bodyGroup.add(hl); bodyGroup.add(hl.target);
+
+        // Wheels
+        const wGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 16); wGeo.rotateZ(Math.PI / 2);
+        const wMat = new THREE.MeshStandardMaterial({ color: 0x111, roughness: 0.9 });
+        const makeW = (x, z) => {
+            const w = new THREE.Mesh(wGeo, wMat);
+            w.position.set(x, 0.35, z); w.castShadow = true;
+            car.add(w); return w;
+        };
+        const wFL = makeW(-1.1, 1.4), wFR = makeW(1.1, 1.4), wRL = makeW(-1.1, -1.4), wRR = makeW(1.1, -1.4);
+
+        // --- ENVIRONMENT ---
+        const obsGeo = new THREE.BoxGeometry(2, 1, 4.4);
+        const obsMat = new THREE.MeshStandardMaterial({ color: 0x444 });
+        const obstacles = [];
+        [[-4, 15], [4, 20]].forEach(p => {
+            const o = new THREE.Mesh(obsGeo, obsMat); o.position.set(p[0], 0.5, p[1]); o.castShadow = true;
+            scene.add(o); obstacles.push(o);
+        });
+        
+        const zone = new THREE.Group();
+        zone.position.set(4, 0.02, 26);
+        scene.add(zone);
+        const zLine = new THREE.Mesh(new THREE.PlaneGeometry(3, 5.5), new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true }));
+        zLine.rotation.x = -Math.PI / 2; zone.add(zLine);
+
+        // --- CAMERAS ---
+        const CAMS = [
+            { id: 'CHASE', pos: new THREE.Vector3(0, 4, -9), look: new THREE.Vector3(0, 1, 0) },
+            { id: 'CLOSE', pos: new THREE.Vector3(0, 2, -6), look: new THREE.Vector3(0, 1, 2) },
+            { id: 'HOOD', pos: new THREE.Vector3(0, 1.2, 1), look: new THREE.Vector3(0, 1, 10) },
+            { id: 'COCKPIT', pos: new THREE.Vector3(-0.4, 0.8, -0.2), look: new THREE.Vector3(0, 0.8, 10) },
+            { id: 'REVERSE', pos: new THREE.Vector3(0, 3, 7), look: new THREE.Vector3(0, 0.5, -5) }
+        ];
+        let camIdx = 0;
+        document.getElementById('cam-btn').onclick = () => {
+            camIdx = (camIdx + 1) % CAMS.length;
+            document.getElementById('cam-btn').innerText = "🎥 " + CAMS[camIdx].id;
+        };
+
+        // --- LOGIC ---
+        let state = 'MENU', speed = 0, lastSpeed = 0, steer = 0, heading = 0, time = 45, dmg = 0, lastTime = 0;
+        const keys = { gas: false, brake: false, left: false, right: false };
+        
+        const bind = (id, k) => {
+            const b = document.getElementById(id);
+            const p = (e) => { e.preventDefault(); keys[k] = true; };
+            const r = (e) => { e.preventDefault(); keys[k] = false; };
+            b.addEventListener('touchstart', p, {passive:false}); b.addEventListener('touchend', r, {passive:false});
+            b.addEventListener('mousedown', p); b.addEventListener('mouseup', r);
+        };
+        bind('btn-g','gas'); bind('btn-b','brake'); bind('btn-l','left'); bind('btn-r','right');
+
+        document.getElementById('start-btn').onclick = () => {
+            initAudio();
+            car.position.set(0,0,0); heading = 0; speed = 0; steer = 0; dmg = 0; time = 45;
+            document.querySelectorAll('.overlay').forEach(e => e.classList.add('hidden'));
+            document.getElementById('hud').classList.remove('hidden');
+            document.getElementById('controls').classList.remove('hidden');
+            document.getElementById('cam-btn').classList.remove('hidden');
+            state = 'PLAY'; lastTime = performance.now();
+            if (audioCtx) audioCtx.resume();
+        };
+
+        function finish(success) {
+            state = 'END';
+            document.getElementById('hud').classList.add('hidden');
+            document.getElementById('controls').classList.add('hidden');
+            document.getElementById('cam-btn').classList.add('hidden');
+            document.getElementById('results').classList.remove('hidden');
+            
+            if(audioInit) { engineGain.gain.value = 0; skidGain.gain.value = 0; }
+
+            const title = document.getElementById('res-title');
+            if (success) {
+                title.innerText = "🏆 PERFECT PARK"; title.style.color = "#00ffcc";
+                let aDiff = Math.abs((heading % Math.PI) - (zone.rotation.y % Math.PI));
+                if (aDiff > Math.PI/2) aDiff = Math.PI - aDiff;
+                document.getElementById('res-time').innerText = (45 - time).toFixed(1) + "s";
+                document.getElementById('res-dmg').innerText = dmg + "%";
+                document.getElementById('res-align').innerText = Math.max(0, Math.round(100 - (aDiff * 100))) + "%";
+                document.getElementById('res-score').innerText = Math.round(1000 + (time*10) - (dmg*5));
+            } else {
+                title.innerText = "💀 WRECKED"; title.style.color = "#ff3366";
+            }
+        }
+        document.getElementById('retry-btn').onclick = document.getElementById('start-btn').onclick;
+
+        function tick() {
+            requestAnimationFrame(tick);
+            if (state === 'PLAY') {
+                const now = performance.now();
+                if (Math.floor(now/1000) > Math.floor(lastTime/1000)) {
+                    time--; document.getElementById('ui-time').innerText = time;
+                    if(time <= 0) finish(false);
+                }
+                lastTime = now;
+
+                lastSpeed = speed;
+                if (keys.gas) speed = Math.min(speed + 0.015, 0.4);
+                else if (keys.brake) speed = Math.max(speed - 0.02, -0.2);
+                else speed *= 0.96;
+
+                if (keys.left) steer = Math.min(steer + 0.08, 0.6);
+                else if (keys.right) steer = Math.max(steer - 0.08, -0.6);
+                else steer *= 0.8;
+
+                // Physics: Body Roll and Pitch (Suspension)
+                const accel = speed - lastSpeed;
+                bodyGroup.rotation.x += ((-accel * 12) - bodyGroup.rotation.x) * 0.15; // Pitch (squat/dive)
+                bodyGroup.rotation.z += (((steer * speed) * 3) - bodyGroup.rotation.z) * 0.15; // Roll
+
+                wFL.rotation.y = steer; wFR.rotation.y = steer;
+                if (Math.abs(speed) > 0.001) {
+                    heading += (speed / (2.6 / Math.sin(steer || 0.001)));
+                    const spin = speed / 0.35;
+                    wFL.rotation.x -= spin; wFR.rotation.x -= spin; wRL.rotation.x -= spin; wRR.rotation.x -= spin;
+                }
+
+                car.rotation.y = heading;
+                car.position.x += Math.sin(heading) * speed;
+                car.position.z += Math.cos(heading) * speed;
+
+                // Lighting Logic
+                brakeMat.emissive.setHex(keys.brake ? 0xff0000 : 0x000000);
+                revMat.emissive.setHex(speed < -0.01 ? 0xffffff : 0x000000);
+
+                // Audio Engine Logic
+                if (audioInit) {
+                    engineOsc.frequency.value = 40 + (Math.abs(speed) * 300);
+                    if (keys.gas) engineGain.gain.value = 0.08;
+                    else engineGain.gain.value = 0.03;
+
+                    // Skid sound if braking hard while moving fast
+                    if (keys.brake && Math.abs(speed) > 0.15) {
+                        skidGain.gain.value = 0.1;
+                        skidOsc.frequency.value = 600 + (Math.random() * 200);
+                    } else {
+                        skidGain.gain.value = 0;
+                    }
+                }
+
+                // Collisions
+                car.updateMatrixWorld();
+                const box = new THREE.Box3().setFromObject(chassis);
+                for(let o of obstacles) {
+                    if(box.intersectsBox(new THREE.Box3().setFromObject(o))) {
+                        speed *= -0.5; dmg += 20; document.getElementById('ui-dmg').innerText = dmg;
+                        if (dmg >= 100) finish(false);
+                        break;
+                    }
+                }
+
+                if (car.position.distanceTo(zone.position) < 2.5 && Math.abs(speed) < 0.01) {
+                    let aDiff = Math.abs((heading % Math.PI) - (zone.rotation.y % Math.PI));
+                    if (aDiff > Math.PI/2) aDiff = Math.PI - aDiff;
+                    if (aDiff < 0.3) finish(true);
+                }
+
+                // Dynamic Camera
+                const cMode = CAMS[camIdx];
+                const rotatedOffset = cMode.pos.clone().applyAxisAngle(new THREE.Vector3(0,1,0), heading);
+                camera.position.lerp(car.position.clone().add(rotatedOffset), 0.15);
+                
+                const rotatedLook = cMode.look.clone().applyAxisAngle(new THREE.Vector3(0,1,0), heading);
+                camera.lookAt(car.position.clone().add(rotatedLook));
+            }
+            renderer.render(scene, camera);
+        }
+        tick();
+
+        window.onresize = () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        };
+    </script>
+</body>
+</html>
