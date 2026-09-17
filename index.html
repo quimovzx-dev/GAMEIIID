@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Turbo Park - V4 The Drive Update</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #05050a; touch-action: none; font-family: 'Helvetica Neue', sans-serif; user-select: none; color: white; }
+        canvas { display: block; }
+        
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(5,5,10,0.9); z-index: 10; backdrop-filter: blur(8px); }
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+        
+        h1 { font-size: 40px; margin: 0; color: #fff; text-shadow: 0 0 15px rgba(0, 255, 204, 0.6); text-transform: uppercase; letter-spacing: 2px; }
+        .subtitle { color: #00ffcc; font-size: 14px; letter-spacing: 3px; margin-bottom: 30px; text-transform: uppercase; }
+        
+        .btn { background: #00ffcc; color: #000; border: none; padding: 15px 35px; font-size: 18px; font-weight: 900; border-radius: 8px; text-transform: uppercase; letter-spacing: 1px; margin-top: 15px; }
+        .btn:active { transform: scale(0.95); }
+
+        /* Garage UI */
+        .car-select { display: flex; gap: 15px; margin-bottom: 30px; }
+        .car-card { border: 2px solid #333; padding: 15px; border-radius: 10px; text-align: center; width: 100px; transition: 0.2s; }
+        .car-card.active { border-color: #00ffcc; background: rgba(0,255,204,0.1); }
+        .car-name { font-weight: bold; font-size: 16px; margin-bottom: 5px; }
+        .car-stat { font-size: 12px; color: #aaa; }
+
+        /* Adaptive HUD */
+        #hud { position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; z-index: 5; pointer-events: none; }
+        .hud-panel { background: rgba(255,255,255,0.05); padding: 10px 15px; border-radius: 8px; border-left: 3px solid #00ffcc; backdrop-filter: blur(4px); }
+        .hud-val { color: #00ffcc; font-family: monospace; font-size: 22px; font-weight: bold; }
+        
+        /* Analogue Steering & Pedals */
+        #controls { position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: space-between; padding: 0 30px; box-sizing: border-box; z-index: 5; }
+        
+        #steering-zone { width: 150px; height: 60px; background: rgba(255,255,255,0.1); border-radius: 30px; position: relative; border: 1px solid rgba(255,255,255,0.2); }
+        #steering-knob { width: 60px; height: 60px; background: #00ffcc; border-radius: 50%; position: absolute; left: 45px; top: -1px; box-shadow: 0 0 10px rgba(0,255,204,0.5); }
+        
+        .pedal-group { display: flex; gap: 15px; }
+        .pedal { width: 60px; height: 80px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; font-size: 24px; display: flex; align-items: center; justify-content: center; }
+        .pedal:active { background: rgba(0,255,204,0.3); border-color: #00ffcc; }
+
+        /* Camera Toggle */
+        #cam-toggle { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.5); border: 1px solid #00ffcc; color: #00ffcc; padding: 8px 15px; border-radius: 20px; font-weight: bold; z-index: 6; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <!-- Menu / Garage -->
+    <div id="menu" class="overlay">
+        <h1>TURBO PARK</h1>
+        <div class="subtitle">V4: City & Physics Update</div>
+        
+        <div class="car-select">
+            <div class="car-card active" id="car-0">
+                <div class="car-name">HATCH</div>
+                <div class="car-stat">Handling: High</div>
+                <div class="car-stat">Speed: Low</div>
+            </div>
+            <div class="car-card" id="car-1">
+                <div class="car-name">SPORT</div>
+                <div class="car-stat">Handling: Med</div>
+                <div class="car-stat">Speed: Med</div>
+            </div>
+            <div class="car-card" id="car-2">
+                <div class="car-name">MUSCLE</div>
+                <div class="car-stat">Handling: Low</div>
+                <div class="car-stat">Speed: High</div>
+            </div>
+        </div>
+
+        <button class="btn" id="start-btn">DRIVE</button>
+    </div>
+
+    <!-- Gameplay HUD -->
+    <div id="hud" class="hidden">
+        <div class="hud-panel">
+            <div style="font-size: 10px; color: #aaa;">SPEED</div>
+            <span class="hud-val" id="ui-speed">0</span> <span style="font-size: 12px;">KM/H</span>
+        </div>
+        <div class="hud-panel">
+            <div style="font-size: 10px; color: #aaa;">GEAR / RPM</div>
+            <span class="hud-val" id="ui-gear">N</span> <span class="hud-val" id="ui-rpm" style="font-size: 14px;">1000</span>
+        </div>
+        <div class="hud-panel" style="border-left-color: #ff3366;">
+            <div style="font-size: 10px; color: #aaa;">DAMAGE</div>
+            <span class="hud-val" id="ui-dmg" style="color: #ff3366;">0%</span>
+        </div>
+    </div>
+
+    <button id="cam-toggle" class="hidden">🎥 CHASE</button>
+
+    <!-- Analogue Controls -->
+    <div id="controls" class="hidden">
+        <div id="steering-zone">
+            <div id="steering-knob"></div>
+        </div>
+        <div class="pedal-group">
+            <div class="pedal" id="btn-brake">🛑</div>
+            <div class="pedal" id="btn-gas">⏫</div>
+        </div>
+    </div>
+
+    <script>
+        // --- PHYSICS & CAR CLASSES ---
+        const CAR_CLASSES = [
+            { id: 0, color: 0x00ffcc, maxSpeed: 0.3, accel: 0.008, brake: 0.02, handling: 0.1, traction: 0.98, length: 3.8, width: 1.8 }, // Hatch
+            { id: 1, color: 0xff3366, maxSpeed: 0.45, accel: 0.012, brake: 0.015, handling: 0.07, traction: 0.96, length: 4.4, width: 2.0 }, // Sport
+            { id: 2, color: 0x222222, maxSpeed: 0.55, accel: 0.018, brake: 0.01, handling: 0.04, traction: 0.92, length: 4.8, width: 2.2 } // Muscle
+        ];
+        let currentCar = CAR_CLASSES[1]; // Default sport
+
+        // Garage Selection Logic
+        document.querySelectorAll('.car-card').forEach((card, idx) => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.car-card').forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+                currentCar = CAR_CLASSES[idx];
+                buildCar(currentCar);
+            });
+        });
+
+        // --- THREE.JS SETUP ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a14);
+        scene.fog = new THREE.FogExp2(0x0a0a14, 0.015);
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const light = new THREE.DirectionalLight(0xddeeff, 1);
+        light.position.set(-20, 30, -20);
+        light.castShadow = true;
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+        // --- CITY ENVIRONMENT ---
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0x111, roughness: 0.9 }));
+        ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+        scene.add(ground);
+
+        const obstacles = [];
+        const bldgMat = new THREE.MeshStandardMaterial({ color: 0x222, roughness: 0.8 });
+        
+        // Procedural City Street Layout
+        const createBuilding = (x, z, w, d, h) => {
+            const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bldgMat);
+            b.position.set(x, h/2, z); b.castShadow = true;
+            scene.add(b); obstacles.push(b);
+        };
+
+        // Create a street corridor with intersections
+        for(let i = -50; i < 100; i += 30) {
+            createBuilding(-15, i, 10, 20, 15 + Math.random()*20); // Left block
+            createBuilding(15, i, 10, 20, 15 + Math.random()*20);  // Right block
+        }
+        
+        // Destination Parking Zone
+        const zone = new THREE.Group();
+        zone.position.set(-6, 0.05, 75); // Down the street and to the left
+        scene.add(zone);
+        const zLine = new THREE.Mesh(new THREE.PlaneGeometry(3.5, 6), new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true }));
+        zLine.rotation.x = -Math.PI / 2; zone.add(zLine);
+
+        // --- DYNAMIC CAR BUILDER ---
+        let carGroup = new THREE.Group();
+        let chassisBox;
+        scene.add(carGroup);
+
+        function buildCar(config) {
+            // Clear existing
+            while(carGroup.children.length > 0){ carGroup.remove(carGroup.children[0]); }
+            
+            const bodyMat = new THREE.MeshStandardMaterial({ color: config.color, metalness: 0.6, roughness: 0.3 });
+            chassisBox = new THREE.Mesh(new THREE.BoxGeometry(config.width, 0.5, config.length), bodyMat);
+            chassisBox.position.y = 0.4; chassisBox.castShadow = true;
+            carGroup.add(chassisBox);
+
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(config.width - 0.4, 0.4, config.length * 0.45), new THREE.MeshStandardMaterial({color:0x000}));
+            cabin.position.set(0, 0.85, -0.2);
+            carGroup.add(cabin);
+        }
+        buildCar(currentCar); // Initial build
+
+        // --- CAMERAS ---
+        const CAMS = [
+            { id: 'CHASE', pos: new THREE.Vector3(0, 4, -9), look: new THREE.Vector3(0, 1, 0) },
+            { id: 'HOOD', pos: new THREE.Vector3(0, 1.2, 1), look: new THREE.Vector3(0, 1, 10) }
+        ];
+        let camIdx = 0;
+        document.getElementById('cam-toggle').onclick = () => {
+            camIdx = (camIdx + 1) % CAMS.length;
+            document.getElementById('cam-toggle').innerText = "🎥 " + CAMS[camIdx].id;
+        };
+
+        // --- ANALOGUE INPUT LOGIC ---
+        let steeringInput = 0; // -1 to 1
+        const knob = document.getElementById('steering-knob');
+        const zoneEl = document.getElementById('steering-zone');
+        
+        zoneEl.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const rect = zoneEl.getBoundingClientRect();
+            const touchX = e.touches[0].clientX - rect.left;
+            
+            // Clamp to zone width (150px)
+            let rawX = Math.max(0, Math.min(150, touchX));
+            knob.style.left = (rawX - 30) + 'px'; // Center knob on touch
+            
+            // Map 0-150 to -1 to 1
+            steeringInput = ((rawX / 150) * 2) - 1;
+        }, {passive: false});
+
+        zoneEl.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            steeringInput = 0;
+            knob.style.left = '45px'; // Snap back to center
+            knob.style.transition = 'left 0.2s';
+            setTimeout(() => knob.style.transition = '', 200);
+        });
+
+        const keys = { gas: false, brake: false };
+        const bindPedal = (id, k) => {
+            const b = document.getElementById(id);
+            b.addEventListener('touchstart', (e) => { e.preventDefault(); keys[k] = true; }, {passive:false});
+            b.addEventListener('touchend', (e) => { e.preventDefault(); keys[k] = false; }, {passive:false});
+        };
+        bindPedal('btn-gas', 'gas'); bindPedal('btn-brake', 'brake');
+
+        // --- GAMEPLAY LOOP ---
+        let state = 'MENU';
+        let speed = 0, actualSteer = 0, heading = 0, dmg = 0;
+
+        document.getElementById('start-btn').onclick = () => {
+            carGroup.position.set(0, 0, 0); heading = 0; speed = 0; dmg = 0;
+            document.getElementById('menu').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            document.getElementById('controls').classList.remove('hidden');
+            document.getElementById('cam-toggle').classList.remove('hidden');
+            state = 'PLAY';
+        };
+
+        function tick() {
+            requestAnimationFrame(tick);
+            if (state === 'PLAY') {
+                const c = currentCar;
+
+                // Physics: Acceleration Curve
+                if (keys.gas) {
+                    // Gradual torque curve (faster at low speeds, levels off)
+                    const torque = 1 - (Math.abs(speed) / c.maxSpeed);
+                    speed += c.accel * Math.max(0.2, torque);
+                    if(speed > c.maxSpeed) speed = c.maxSpeed;
+                } else if (keys.brake) {
+                    speed -= c.brake;
+                    if(speed < -0.2) speed = -0.2; // Reverse cap
+                } else {
+                    speed *= c.traction; // Coasting/Friction
+                }
+
+                // Physics: Steering Sensitivity based on speed
+                const turnEfficacy = Math.min(1, Math.abs(speed) / 0.1); 
+                actualSteer = steeringInput * c.handling * turnEfficacy;
+
+                if (Math.abs(speed) > 0.001) {
+                    // Angular velocity calculation based on wheelbase
+                    heading += (speed / (c.length / Math.sin(actualSteer || 0.001)));
+                }
+
+                carGroup.rotation.y = heading;
+                carGroup.position.x += Math.sin(heading) * speed;
+                carGroup.position.z += Math.cos(heading) * speed;
+
+                // Adaptive HUD Updates
+                const kmh = Math.abs(Math.round(speed * 300));
+                document.getElementById('ui-speed').innerText = kmh;
+                
+                let gear = speed > 0.01 ? (kmh > 80 ? '3' : kmh > 40 ? '2' : '1') : speed < -0.01 ? 'R' : 'N';
+                document.getElementById('ui-gear').innerText = gear;
+                
+                // Simulate Engine RPM
+                const rpmBase = gear === 'N' ? 1000 : 2000;
+                const rpm = Math.round(rpmBase + ((Math.abs(speed) % 0.15) / 0.15) * 4000);
+                document.getElementById('ui-rpm').innerText = rpm;
+
+                // Collisions
+                carGroup.updateMatrixWorld();
+                const box = new THREE.Box3().setFromObject(chassisBox);
+                let hit = false;
+                for(let o of obstacles) {
+                    if(box.intersectsBox(new THREE.Box3().setFromObject(o))) { hit = true; break; }
+                }
+
+                if (hit) {
+                    speed *= -0.5; // Kinetic bounce
+                    dmg += Math.round(Math.abs(speed) * 100) + 5; // Damage based on impact speed
+                    document.getElementById('ui-dmg').innerText = dmg + '%';
+                    if (dmg >= 100) { state = 'END'; alert('Vehicle Totalled. Refresh to restart.'); }
+                }
+
+                // Camera Logic
+                const cMode = CAMS[camIdx];
+                const rotatedOffset = cMode.pos.clone().applyAxisAngle(new THREE.Vector3(0,1,0), heading);
+                camera.position.lerp(carGroup.position.clone().add(rotatedOffset), 0.1);
+                const rotatedLook = cMode.look.clone().applyAxisAngle(new THREE.Vector3(0,1,0), heading);
+                camera.lookAt(carGroup.position.clone().add(rotatedLook));
+            }
+            renderer.render(scene, camera);
+        }
+        tick();
+
+        window.onresize = () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        };
+    </script>
+</body>
+</html>
